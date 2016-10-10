@@ -12,18 +12,15 @@ from project_imports import *
 get_ipython().run_cell_magic('javascript', '', "var csc = IPython.keyboard_manager.command_shortcuts\ncsc.add_shortcut('Ctrl-k','ipython.move-selected-cell-up')\ncsc.add_shortcut('Ctrl-j','ipython.move-selected-cell-down')\ncsc.add_shortcut('Shift-m','ipython.merge-selected-cell-with-cell-after')")
 
 
-# In[ ]:
-
-from pandas.compat import lmap, lfilter, lrange, lzip
-
-
 # # Imports
 
 # In[ ]:
 
+import scipy as sp
+from pandas.compat import lmap, lfilter, lrange, lzip
+
 import numba_lookup as nl; reload(nl); from numba_lookup import *
 import tests.test_lookup as ll; reload(ll); from tests.test_lookup import *
-import scipy as sp
 
 
 # ## Sorted array
@@ -48,32 +45,6 @@ ix_table = get_index(ks)
 
 k1, k2 = 0, 228
 sorted_arr_lookup_ix(ks, vs, ix_table, k1, k2)
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-def test_sorted_arr_lookup_ix(dct):
-    ks, vs = tup_dct2arr(dct)
-    ix_test = get_index(ks)
-    test_lookup_eq(partial(sorted_arr_lookup_ix, ks, vs, ix_test), dct)
-
-    
-test_sorted_arr_lookup_ix(drand)
-
-
-# In[ ]:
-
-np.hstack([ks, vs[:, None]])[:15]
-
-
-# In[ ]:
-
-ks[:15]
 
 
 # In[ ]:
