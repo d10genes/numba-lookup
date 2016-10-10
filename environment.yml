@@ -1,0 +1,42 @@
+name: lookup
+dependencies:
+- python=3.5
+- flake8
+# - openssl=1.0.2d=0
+# - cython
+# - pip
+# - nltk
+- pandas
+- numba
+- lxml
+# - beautifulsoup4
+# - requests
+# - html5lib
+# - numexpr
+- gensim  # =0.12.4
+# - seaborn
+- joblib
+# - statsmodels
+# - patsy
+# - scikit-learn
+# - spacy
+# - pygments
+# - networkx
+# - line_profiler
+- pip:
+  # - grequests
+  - "ipython[notebook]<4"
+  - toolz
+  # - snakeviz
+  # - pygraphviz
+  # - fuzzywuzzy
+  # - autograd
+  # - voluptuous
+  - pytest
+  - feather-format  # export MACOSX_DEPLOYMENT_TARGET=10.10
+  # - aiohttp
+  # - requests-cache
+  # - pymining
+  # - pymc3
+  # - '--process-dependency-links git+https://github.com/pymc-devs/pymc3'
+  # - 'git+https://github.com/pymc-devs/pymc3'
