@@ -1,15 +1,17 @@
 '''
 Logarithmic time lookup with double keys using numba
 '''
-from functools import partial
-
-from numba import njit
+from numba import njit, jitclass, int64, float64
+from numba.numpy_support import from_dtype
 import numpy as np
-from pandas import DataFrame
+# from functools import partial
+# from pandas import DataFrame
 
 
+nx = lambda x: next(iter(x))
 # def tup_dct2arr(dct):
 #     return np.array([[k1, k2, v] for (k1, k2), v in sorted(dct.items())])
+
 
 def tup_dct2arr(dct, kv=True):
     arr = np.array([[a, b, c] for (a, b), c in dct.items()])
@@ -23,7 +25,7 @@ def tup_dct2arr(dct, kv=True):
     return ks, vs
 
 
-# @njit
+@njit
 def sorted_arr_lookup(ks, vs, k1, k2):
     """A is a n x 3 array with the first 2 columns sorted.
     The values are in the 3rd column.
@@ -136,6 +138,96 @@ def sorted_arr_lookup_ix(karr, vals, ix_table, k1, k2):
         print(k1_, k2_)
         raise KeyError("Array doesn't contain keys")
     return vals[ix]
+
+
+################
+# Dictwrappers #
+################
+@jitclass([
+    ('ks', int64[:, :]),
+    ('vs', float64[:]),
+    ('ix_table', int64[:, :]),
+])
+class NMap(object):
+
+    def __init__(self, ks, vs, ix_table):  # ix_table
+        self.ks = ks
+        self.vs = vs
+        self.ix_table = ix_table
+
+    def get(self, k1, k2):
+        return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
+
+
+@jitclass([
+    ('ks', int64[:, :]),
+    ('vs', float64[:]),
+    ('ix_table', int64[:, :]),
+])
+class NMap2(object):
+
+    def __init__(self, ks, vs):  # ix_table
+        self.ks = ks
+        self.vs = vs
+
+    def get(self, k1, k2):
+        return sorted_arr_lookup(self.ks, self.vs, k1, k2)
+
+
+def nmap(dct=None, ks=None, vs=None):
+    if ks is None or vs is None:
+        ks, vs = tup_dct2arr(dct)
+    ix = get_index(ks)
+
+    spec = [
+        ('ks', from_dtype(ks.dtype)[:, :]),
+        ('vs', from_dtype(vs.dtype)[:]),
+        ('ix_table', from_dtype(ix.dtype)[:, :]),
+    ]
+
+    @jitclass(spec)
+    class NMap(object):
+
+        def __init__(self, ks, vs, ix_table):  # ix_table
+            self.ks = ks
+            self.vs = vs
+            self.ix_table = ix_table
+
+        def get(self, k1, k2):
+            return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
+
+        def get2(self, k1, k2):
+            return sorted_arr_lookup(self.ks, self.vs, k1, k2)
+
+        def keys(self):
+            r = []
+            for i in range(len(ks)):
+                r.append((ks[i, 0], ks[i, 1]))
+            return r
+
+        def values(self):
+            r = []
+            for i in range(len(vs)):
+                r.append(vs[i])
+            return r
+
+        def items(self):
+            r = []
+            for k, v in zip(self.keys(), self.values()):
+                r.append((k, v))
+            return r
+
+    return NMap(ks, vs, ix)
+
+
+def mk_nmap2(dct=None, ks=None, vs=None):
+    if ks is None or vs is None:
+        ks, vs = tup_dct2arr(dct)
+    return NMap2(ks, vs)
+
+
+def nmap2dict(nm):
+    return dict(nm.items())
 
 
 #########

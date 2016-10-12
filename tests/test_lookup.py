@@ -1,6 +1,6 @@
 from numba_lookup import (
     get_index, tup_dct2arr, lookup_eq_tester, sorted_arr_lookup_ix,
-    sorted_arr_lookup
+    sorted_arr_lookup, nmap2dict, nmap
 )
 import pytest
 from scipy import sparse
@@ -61,3 +61,7 @@ def test_sorted_arr_lookup_ix(dct):
 def test_sorted_arr_lookup(dct):
     ks, vs = tup_dct2arr(dct)
     lookup_eq_tester(partial(sorted_arr_lookup, ks, vs), dct)
+
+
+def test_nm_creation(dct):
+    assert nmap2dict(nmap(dct)) == dct

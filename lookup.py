@@ -18,8 +18,11 @@ get_ipython().run_cell_magic('javascript', '', "var csc = IPython.keyboard_manag
 
 import scipy as sp
 from pandas.compat import lmap, lfilter, lrange, lzip
-
 import numba_lookup as nl; reload(nl); from numba_lookup import *
+
+
+# In[ ]:
+
 import tests.test_lookup as ll; reload(ll); from tests.test_lookup import *
 
 
@@ -41,16 +44,211 @@ ks, vs = nl.tup_dct2arr(drand)
 ix_table = get_index(ks)
 
 
+# k1, k2 = 0, 228
+# sorted_arr_lookup_ix(ks, vs, ix_table, k1, k2)
+
 # In[ ]:
 
-k1, k2 = 0, 228
-sorted_arr_lookup_ix(ks, vs, ix_table, k1, k2)
+from numba import jitclass, int64, float64
+
+
+# In[ ]:
+
+nm = nmap(drand)
+
+
+# In[ ]:
+
+nmap2dict(nmap(drand)) == drand
+
+
+# In[ ]:
+
+try:
+    sum_odds_r(nm, rand_keys)
+except Exception as e:
+    print(e)
+    
+
+
+# In[ ]:
+
+nm.get2(0, 86)
+
+
+# In[ ]:
+
+nm.items()
+
+
+# In[ ]:
+
+nm2 = mk_nmap2(drand)
+
+
+# In[ ]:
+
+
+
+
+# In[ ]:
+
+get_index(ks)
+
+
+# In[ ]:
+
+from numba.numpy_support import from_dtype
+
+
+# In[ ]:
+
+sum([nm.get(k1, k2) for k1, k2 in keys(ks) if k2 % 2 == 1])
+
+
+# In[ ]:
+
+lmap(type, list(drand.keys())[0])
+
+
+# In[ ]:
+
+type(drand[(3149, 598)])
+
+
+# In[ ]:
+
+list(it.islice(keys(ks), 5))
+list(it.islice(values(vs), 5))
+
+
+# In[ ]:
+
+nr.seed(0)
+rand_keys_ = nr.randint(len(nm.ks), size=1000)
+rand_keys = nm.ks[rand_keys_]
 
 
 # In[ ]:
 
 @njit
-def sorted_arr_lookup_ix(karr, vals, ix_table, k1, k2):
+def sum_odds(nm):
+    s = 0
+    for k1, k2 in nm.keys():
+        if k2 % 2 == 1:
+            s += nm.get(k1, k2)
+    return s
+
+
+@njit
+def sum_odds2(nm):
+    s = 0
+    for k1, k2 in nm.keys():
+        if k2 % 2 == 1:
+            s += nm.get2(k1, k2)
+    return s
+
+
+# In[ ]:
+
+get_ipython().magic('time sum([v for (k1, k2), v in drand.items() if k2 % 2 == 1])')
+
+
+# In[ ]:
+
+@njit
+def sum_r(nm, rks):
+    s = 0
+    for i in range(len(rks)):
+        k1, k2 = nm.ks[i]
+        s += nm.get(k1, k2)
+    return s
+
+@njit
+def sum_r2(nm, rks):
+    s = 0
+    for i in range(len(rks)):
+        k1, k2 = nm.ks[i]
+        s += nm.get2(k1, k2)
+    return s
+
+
+# In[ ]:
+
+del sum_odds_r, sum_odds_r2
+
+
+# In[ ]:
+
+get_ipython().magic('timeit sum_r(nm, rand_keys)')
+get_ipython().magic('timeit sum_r2(nm, rand_keys)')
+# %time sum_odds(nm, rand_keys)
+
+
+# In[ ]:
+
+@jitclass([
+        ('ks', int64[:, :]),      
+#         ('k1s', int64[:]),      
+#         ('k2s', int64[:]),      
+        ('vs', float64[:]),      
+        ('ix_table', int64[:, :]),      
+])
+class NMap(object):
+#     def __init__(self, k1s, k2s, vs, ix_table):  # ix_table
+    def __init__(self, ks, vs, ix_table):  # ix_table
+#         self.k1s = k1s
+#         self.k2s = k2s
+        self.ks = ks
+        self.vs = vs
+        self.ix_table = ix_table
+#         self.ix_table = get_index(ks)
+        
+    def get(self, k1, k2):
+        # k1, k2 = tup
+        return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
+    
+    def __getitem__(self, tup):
+        k1, k2 = tup
+        return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
+#     def __getitem__(self, tup):
+#         k1, k2 = tup
+#         return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
+
+k1s_ = ks[:, 0]
+k2s_ = ks[:, 1]
+try:
+#     NMap(ks, vs, get_index(ks))
+    nm = NMap(ks, vs, get_index(ks))
+#     nm = NMap(ks, vs)
+except Exception as e:
+    print(e)
+
+
+# In[ ]:
+
+nm.get(0, 31)
+
+
+# In[ ]:
+
+nm[0, 31]
+
+
+# In[ ]:
+
+nm.ks
+
+
+# In[ ]:
+
+sorted_arr_lookup_ix
+
+
+# In[ ]:
+
+@njit
+def sorted_arr_lookup_ix(k1s, k2s, vals, ix_table, k1, k2):
     """A is a n x 3 array with the first 2 columns sorted.
     The values are in the 3rd column.
     The lookup uses a binary sort on the first 2 columns to
@@ -63,16 +261,16 @@ def sorted_arr_lookup_ix(karr, vals, ix_table, k1, k2):
     mx_index = ix_table[-1, 0]
     ix_k1 = lookup_ix(ix_table, k1)
     if k1 == mx_index:
-        ix_k2 = len(karr)
+        ix_k2 = len(k1s)
     else:
         ix_k2 = lookup_ix(ix_table, k1 + 1, check=False)
 
-    c2 = karr[ix_k1:ix_k2, 1]
+    c2 = k2s[ix_k1:ix_k2]
     ixb1 = np.searchsorted(c2, k2)
     # ixb2 = np.searchsorted(c2, k2 + 1)
 
     ix = ix_k1 + ixb1
-    k1_, k2_ = karr[ix]
+    k1_, k2_ = k1s[ix], k2s[ix]
 
     if (k1_ != k1) or (k2_ != k2):
         print('k1', k1, 'k2', k2)
