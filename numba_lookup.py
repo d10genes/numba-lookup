@@ -76,38 +76,6 @@ def lookup_ix(arr, ix1, check=False):
     return v_ix
 
 
-# @njit
-# def sorted_arr_lookup_ix(arr, ix_table, k1, k2):
-#     """A is a n x 3 array with the first 2 columns sorted.
-#     The values are in the 3rd column.
-#     The lookup uses a binary sort on the first 2 columns to
-#     get the value in the third.
-#     ix_table: nx2 array.
-#         - 1st col is deduplicated, sorted k1 values
-#         - 2nd col is index in `arr` of first occurrence of row's k1
-#     """
-#     # print(k1, k2)
-#     mx_index = ix_table[-1, 0]
-#     ix_k1 = lookup_ix(ix_table, k1)
-#     if k1 == mx_index:
-#         ix_k2 = len(arr)
-#     else:
-#         ix_k2 = lookup_ix(ix_table, k1 + 1, check=False)
-
-#     c2 = arr[ix_k1:ix_k2, 1]
-#     ixb1 = np.searchsorted(c2, k2)
-#     # ixb2 = np.searchsorted(c2, k2 + 1)
-
-#     ix = ix_k1 + ixb1
-#     k1_, k2_, v = arr[ix]
-
-#     if (k1_ != k1) or (k2_ != k2):
-#         print('k1', k1, 'k2', k2)
-#         print(k1_, k2_)
-#         raise KeyError("Array doesn't contain keys")
-#     return v
-
-
 @njit
 def sorted_arr_lookup_ix(karr, vals, ix_table, k1, k2):
     """A is a n x 3 array with the first 2 columns sorted.
@@ -228,14 +196,6 @@ def mk_nmap2(dct=None, ks=None, vs=None):
 
 def nmap2dict(nm):
     return dict(nm.items())
-
-
-#########
-# Tests #
-#########
-def lookup_eq_tester(f, dct):
-    for (k1, k2), v in dct.items():
-        assert f(k1, k2) == v
 
 
 # def test_sorted_arr_lookup_ix(dct):
