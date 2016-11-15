@@ -1,10 +1,18 @@
 
 # coding: utf-8
 
+# - limitations
+#     - can't construct with numba
+
+# In[ ]:
+
+import matplotlib.pyplot as plt
+get_ipython().magic('matplotlib inline')
+
+
 # In[ ]:
 
 from project_imports import *
-# %matplotlib inline
 
 
 # In[ ]:
@@ -26,21 +34,7 @@ import numba_lookup as nl; reload(nl); from numba_lookup import *
 import tests.test_lookup as ll; reload(ll); from tests.test_lookup import *
 
 
-# ### Constant
-# 
-# import time
-# timef = time.perf_counter
-# 
-# def timer(f):
-#     def f2(*a, **k):
-#         st = timef()
-#         res = f(*a, **k)
-#         t = timef() - st
-#         # print(t)
-#         return t, res
-#     return f2
-# 
-# 
+# # Benchmarks: constant vs linear vs log
 
 # In[ ]:
 
@@ -49,38 +43,56 @@ import timeit
 def run_inputs(f=None, genargs=None, inputs=[], n_repeat=10):
     ts = OrderedDict()
     for n in inputs:
-        args = genargs(n)
-        ts[n] = timeit.timeit(lambda: f(*args), number=n_repeat) / n_repeat
-    return Series(ts)
+        test_func = lambda: f(*genargs(n))
+        ts[n] = timeit.timeit(test_func, number=n_repeat) / n_repeat
+    s = Series(ts, name='Time')
+    s.index.name = 'N'
+    return s
+
+def s2df(s, **kw):
+    "Series to DataFrame"
+    df = s.reset_index(drop=0)
+    for k, v in kw.items():
+        df[k] = v
+    return df
 
 
-# ### Constant time query
+# ## Constant time query
 
 # In[ ]:
 
-def mk_rnd_dct_arr(n, asize=1000):
-    rx = nr.randint(0, int(1e9), size=(n, 2))
-    return dict(rx), nr.choice(rx[:, 0], size=asize)
+s = Series([1,2], name='a')
+s = s.reset_index(drop=0)
+s
 
-def dct_f(dct, ks):
+
+# In[ ]:
+
+def mk_rnd_dct_arr(dictsize, nkeys=1000):
+    "Generate random int dict and random subset of keys"
+    rx = nr.randint(0, int(1e9), size=(dictsize, 2))
+    return dict(rx), nr.choice(rx[:, 0], size=nkeys)
+
+def dct_benchmark(dct, ks):
+    "Sum all of the values in dict for given keys"
     return sum(dct[k] for k in ks)
 
 
 # In[ ]:
 
-ts = run_inputs(f=dct_f, genargs=mk_rnd_dct_arr, inputs=[1, 10, 100, 1000, 10000, ]) 
-ts
+ts_const = run_inputs(f=dct_benchmark, genargs=mk_rnd_dct_arr, inputs=[1, 10, 100, 1000, 10000, ]) 
+ts_const
 
 
-# ### Linear lookup
+# ## Linear lookup
 
 # In[ ]:
 
 def dct2linear_lookup(dct):
     return np.array(list(dct.items()))
 
-def mk_rnd_linear_dct(n, asize=1000):
-    d, a = mk_rnd_dct_arr(n, asize=asize)
+def mk_rnd_linear_dct(n, nkeys=1000):
+    d, a = mk_rnd_dct_arr(n, nkeys=nkeys)
     return dct2linear_lookup(d), a
 
 def linear_lookup_get(arr, kquery):
@@ -89,7 +101,7 @@ def linear_lookup_get(arr, kquery):
             return v
     raise KeyError(kquery)
     
-def linear_f(dct, ks):
+def linear_benchmark(dct, ks):
     return sum(linear_lookup_get(dct, k) for k in ks)
 
 
@@ -98,14 +110,16 @@ def linear_f(dct, ks):
 d, a = mk_rnd_dct_arr(100, 1000)
 dlin = dct2linear_lookup(d)
 
-assert dct_f(d, a) == linear_f(dlin, a)
+assert dct_benchmark(d, a) == linear_benchmark(dlin, a)
 
 
 # In[ ]:
 
-ts2 = run_inputs(f=linear_f, genargs=mk_rnd_linear_dct, inputs=[1, 10, 100], n_repeat=10) 
-ts2
+ts_lin = run_inputs(f=linear_benchmark, genargs=mk_rnd_linear_dct, inputs=[1, 10, 100], n_repeat=10) 
+ts_lin
 
+
+# ### Numba speedup
 
 # In[ ]:
 
@@ -118,7 +132,7 @@ def linear_lookup_get_nb(arr, kquery):
     raise KeyError
 
 @njit
-def linear_f_nb(dct, ks):
+def linear_benchmark_nb(dct, ks):
     s = 0
     for k in ks:
         s += linear_lookup_get_nb(dct, k)
@@ -127,36 +141,13 @@ def linear_f_nb(dct, ks):
 
 # In[ ]:
 
-assert linear_f(dlin, a) == linear_f_nb(dlin, a)
+assert linear_benchmark(dlin, a) == linear_benchmark_nb(dlin, a)
 
 
 # In[ ]:
 
-ts3 = run_inputs(f=linear_f_nb, genargs=mk_rnd_linear_dct, inputs=10 ** np.arange(6), n_repeat=10) 
-Series(ts3)
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-@njit
-def linear_lookup_get_nb(arr, kquery):
-    for k, v in arr:
-        if k == kquery:
-            return v
-    raise KeyError(kquery)
-
-    
-@njit
-def linear_f_nb(dct, ks):
-    s = 0
-    for k in ks:
-        s += linear_lookup_get_nb(dct, k)
-    return s
+ts_lin_nb = run_inputs(f=linear_benchmark_nb, genargs=mk_rnd_linear_dct, inputs=10 ** np.arange(6), n_repeat=10) 
+ts_lin_nb
 
 
 # In[ ]:
@@ -166,68 +157,27 @@ def linear_f_nb(dct, ks):
 
 # In[ ]:
 
-
-
-try:
-#     linear_lookup_get_nb(d, 1.)
-    linear_f_nb(d, a)
-except Exception as e:
-    print(e)
+import seaborn as sns
 
 
 # In[ ]:
 
-assert linear_f(dlin, a) == linear_f_nb(dlin, a)
+times
 
 
 # In[ ]:
 
-assert dct_f(d, a) == linear_f_nb(dlin, a)
-assert linear_f(dlin, a) == linear_f_nb(dlin, a)
+times = pd.concat([
+    s2df(ts_const, Complexity='Constant'),
+    s2df(ts_lin, Complexity='Linear'),
+    s2df(ts_lin_nb, Complexity='Linear numba'),
+])
 
+def plot(x, y, **_):
+    return plt.plot(x, y, '.:')
 
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-ts3 = run_inputs(f=linear_f_nb, genargs=mk_rnd_linear_dct, inputs=[1, 10, 100, 1000, 10000], n=1) 
-Series(ts3)
-
-
-# In[ ]:
-
-
-Series(ts2)
-
-
-# In[ ]:
-
-ts2 = run_inputs(f=linear_f, genargs=mk_rnd_linear_dct, inputs=[1, 10, 100], n=2) 
-Series(ts2)
-
-
-# In[ ]:
-
-Series(ts).reset_index(drop=0).rename(columns={'index': 'Input size', 0: 'Avg time'})
-
-
-# In[ ]:
-
-dct_get(d, a)
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-t = timeit.Timer('dct_get(d, a)')
-t.timeit(number=100)
+g = sns.FacetGrid(times, col='Complexity', sharex=False)
+g.map(plot, 'N', 'Time')
 
 
 # ## Sorted array

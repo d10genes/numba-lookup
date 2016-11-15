@@ -14,7 +14,7 @@ dependencies:
 # - html5lib
 # - numexpr
 - gensim  # =0.12.4
-# - seaborn
+- seaborn
 - joblib
 # - statsmodels
 # - patsy

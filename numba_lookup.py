@@ -10,13 +10,15 @@ import numpy as np
 
 nx = lambda x: next(iter(x))
 # def tup_dct2arr(dct):
-#     return np.array([[k1, k2, v] for (k1, k2), v in sorted(dct.items())])
+#     return np.array([[k1, k2, v] for (k1, k2),
+# v in sorted(dct.items())])
 
 
 def tup_dct2arr(dct, kv=True):
     arr = np.array([[a, b, c] for (a, b), c in dct.items()])
     _, ncols = arr.shape
-    arrs = arr[np.lexsort([arr[:, col] for col in range(ncols - 1)][::-1])]
+    arrs = arr[np.lexsort([arr[:, col] for col in
+                           range(ncols - 1)][::-1])]
 
     if not kv:
         return arrs
@@ -51,7 +53,8 @@ def sorted_arr_lookup(ks, vs, k1, k2):
 
 # Use precomputed index to find 1st key faster
 def get_index(ks):
-    """Return lookup table for indices of each new entry in 1st column
+    """Return lookup table for indices of each
+    new entry in 1st column
     [0, blah, ...]
     [1, blah, ...]
     [1, blah, ...]
@@ -124,7 +127,8 @@ class NMap(object):
         self.ix_table = ix_table
 
     def get(self, k1, k2):
-        return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
+        return sorted_arr_lookup_ix(self.ks, self.vs,
+                                    self.ix_table, k1, k2)
 
 
 @jitclass([
