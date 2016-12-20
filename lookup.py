@@ -1,43 +1,39 @@
 
 # coding: utf-8
 
-# - limitations
-#     - can't construct with numba
+# I recently had occasion to use dictionary or sparse matrix to keep track of co-occurrence counts, neither of which I could use with Numba. This isn't the first time I've seen this limitation, so I thought it would be worth my time to look for the best solution I could conjure with the minimal amount of energy. 
+# 
+# While python's arrays and dicts come with the convenience of constant time lookups, I couldn't think of a straightforward strategy to use these in Numba. 
 
 # In[ ]:
 
 import matplotlib.pyplot as plt
 get_ipython().magic('matplotlib inline')
-
-
-# In[ ]:
+get_ipython().magic('load_ext autoreload')
 
 from project_imports import *
 
 
 # In[ ]:
 
-get_ipython().run_cell_magic('javascript', '', "var csc = IPython.keyboard_manager.command_shortcuts\ncsc.add_shortcut('Ctrl-k','ipython.move-selected-cell-up')\ncsc.add_shortcut('Ctrl-j','ipython.move-selected-cell-down')\ncsc.add_shortcut('Shift-m','ipython.merge-selected-cell-with-cell-after')")
-
-
-# # Imports
-
-# In[ ]:
-
 import scipy as sp
 import seaborn as sns
+from numba import njit
+
 from pandas.compat import lmap, lfilter, lrange, lzip
-import numba_lookup as nl; reload(nl); 
-# from numba_lookup import *
-(";")
+import numba_lookup as nl
+
+from tests.test_lookup import *
 
 
 # In[ ]:
 
-import tests.test_lookup as ll; reload(ll); from tests.test_lookup import *
+get_ipython().run_cell_magic('javascript', '', "Jupyter.keyboard_manager.command_shortcuts.add_shortcuts({\n'Ctrl-k': 'jupyter-notebook.move-selected-cell-up',\n'Ctrl-j': 'jupyter-notebook.move-selected-cell-down',\n'Shift-m': 'jupyter-notebook.merge-selected-cell-with-cell-after'})")
 
 
 # # Benchmarks: constant vs linear vs log
+# 
+# Here is some code that benchmarks different lookup strategies to compare how much slower they get as the number of elements in the lookup structure increases. The function `run_benchmark` takes a function `f` that does a lookup, and function `genargs(n)` that creates the lookup data structure with `n` elements. Since we want to see how the size affects the lookup speed, different input sizes can be passed through the `inputs` arg, and the function will return a Series with the average lookup time for each size.
 
 # In[ ]:
 
@@ -70,15 +66,8 @@ def s2df(s, **kw):
 
 
 # ## Constant time query
-
-# def mk_rnd_dct_arr1d(dictsize, nkeys=1000):
-#     "Generate random int dict and random subset of keys"
-#     rx = nr.randint(0, int(1e9), size=(dictsize, 2))
-#     return dict(rx), nr.choice(rx[:, 0], size=nkeys)
 # 
-# def dct_benchmark1d(dct, ks):
-#     "Sum all of the values in dict for given keys"
-#     return sum(dct[k] for k in ks)
+# To illustrate the ideal performance I'd like, we'll first benchmark constant time lookups. The functions here will randomly generate dictionaries of size `n` with 2-tuple int keys and int values (i.e., `{(2, 3): 4}`), in the form that a co-occurrence lookup would have. It will then generate a random subset of keys, which the benchmark function `dct_benchmark` will use to look up corresponding values and sum. 
 
 # In[ ]:
 
@@ -100,32 +89,26 @@ ts_const = run_benchmark(f=dct_benchmark, genargs=mk_rnd_dct_arr2d, inputs=[1, 1
 ts_const
 
 
+# Since we've left a computer science textbook and entered a computer, there will be some variation. But the general trend here is that, even when the size of the dict increases 10x, this does not have a 10x increase in the lookup time (as a linear time lookup would), but rather remains about the same. 
+
 # ## Linear lookup
 
-# def dct2linear_lookup(dct):
-#     return np.array(list(dct.items()))
+# As nice as python's built-in hash tables are, they haven't been ported to numba yet, so we can't really take advantage of them in large for-loops.
 # 
-# def mk_rnd_linear_dct(n, nkeys=1000):
-#     d, a = mk_rnd_dct_arr(n, nkeys=nkeys)
-#     return dct2linear_lookup(d), a
-# 
-# def linear_lookup_get(arr, kquery):
-#     for k, v in arr:
-#         if k == kquery:
-#             return v
-#     raise KeyError(kquery)
-#     
-# def linear_benchmark(dct, ks):
-#     return sum(linear_lookup_get(dct, k) for k in ks)
+# Though it took me longer than I'd be comfortable admitting, there's a simple solution to get around dict usage that can use arrays. Arranging the 2 keys and 1 value as 3 columns in an array in this form:
 
 # In[ ]:
 
 DataFrame([[3, 4, 1], [2, 3, 4]], columns=['Key 1', 'Key 2', 'Value'])
 
 
+# we can look up the co-occurrence count of indices `2` and `3`, for example, by scanning through the first and second columns until we see the values 2 and 3, and then return the 3rd entry in that row (in this case, `4`).
+
 # In[ ]:
 
 class DWrapper:
+    """Wrap an array and lookup function to use
+    same api as a dict."""
     def __init__(self, dct, getter=None):
         self.dct = dct
         self.getter = getter
@@ -172,27 +155,11 @@ ts_lin = run_benchmark(f=dct_benchmark, genargs=partial(mk_rnd_linear_dct, gette
 ts_lin
 
 
+# The times here show that as the size of the array increases by an order of magnitude, the time it takes to look up a single element also increases by (very roughly) an order of magnitude. While dicts are relatively unscathed by bigger sizes, a linear speed lookup like the array above will make lookups impossibly slow, particularly with a long loop.
+
 # ### Numba speedup
 
-# @njit
-# def linear_lookup_get_nb(arr, kquery):
-#     for i in range(len(arr)):
-#         if arr[i, 0] == kquery:
-#             return arr[i, 1]
-#     print(kquery)
-#     raise KeyError
-# 
-# @njit
-# def linear_benchmark_nb(dct, ks):
-#     s = 0
-#     for k in ks:
-#         s += linear_lookup_get_nb(dct, k)
-#     return s
-
-# In[ ]:
-
-from numba import njit
-
+# To show how devastating linear complexity is for large N, here is a similar lookup array that uses numba to speed things up. 
 
 # In[ ]:
 
@@ -222,15 +189,30 @@ ts_lin_nb = run_benchmark(f=dct_benchmark, genargs=_gen_nb,
 ts_lin_nb
 
 
-# ts_lin_nb = run_benchmark(f=dct_benchmark, genargs=mk_rnd_linear_dct, inputs=[1, 10, 100], n_repeat=10) 
-# ts_lin_nb
-
-# ts_lin_nb = run_benchmark(f=linear_benchmark_nb, genargs=mk_rnd_linear_dct, inputs=10 ** np.arange(6), n_repeat=10) 
-# ts_lin_nb
+# While the time it takes to scan through an array is about an order of magnitude slower than the time it takes in pure python, you see the same explosion in time as the size of the array increases. Numba buys you about an order of magnitude in time with a linear lookup before it also becomes unusable for large loops.
+# 
+# The charts below show the times in both log and linear scale. The linear scale is probably better here, and shows the constant uptick in time it takes to retrieve from the linear lookups, but with a lower slope for the lookups done in numba functions. 
 
 # In[ ]:
 
-times = pd.concat([
+# Tabulate times for easy plotting
+def tab_time_scales(xs):
+    times = pd.concat(xs)
+    return pd.concat([
+        s2df(times.set_index('N'), Scale='Linear'),
+        s2df(times.set_index('N'), Scale='Log'),
+    ])
+    
+def plot(x, y, scales, **kw):
+    scale, *_ = scales
+    p = plt.plot(x, y, '.:')
+    if scale == 'Log':
+        plt.xscale('log')
+    else:
+        plt.xticks(rotation=75)
+    return p
+
+times_scales = tab_time_scales([
     s2df(ts_const, Complexity='Constant'),
     s2df(ts_lin, Complexity='Linear'),
     s2df(ts_lin_nb, Complexity='Linear numba'),
@@ -239,59 +221,40 @@ times = pd.concat([
 
 # In[ ]:
 
-times_scales = pd.concat([
-    s2df(times.set_index('N'), Scale='Linear'),
-    s2df(times.set_index('N'), Scale='Log'),
-])
-
-
-# In[ ]:
-
-def plot(x, y, scales, **kw):
-    scale, *_ = scales
-#     print(scale)
-#     print(kw)
-    p = plt.plot(x, y, '.:')
-    if scale == 'Log':
-        plt.xscale('log')
-    return p
-
 g = sns.FacetGrid(times_scales, col='Complexity', row='Scale', sharex=False)
 g.map(plot, 'N', 'Time', 'Scale');
 
 
-# def plot(x, y, **kw):
-#     p = plt.plot(x, y, '.:')
-#     plt.xscale('log')
-#     return p
 # 
-# g = sns.FacetGrid(times, col='Complexity', sharex=False)
-# g.map(plot, 'N', 'Time');
-
-# def plot_zoom(x, y, **_):
-# #     global x1, y1
-# #     x1, y1 = x, y
-#     bm = x <= 1000
-#     p = plt.plot(x[bm], y[bm], '.:')
-# #     plt.xlim(None, 200)
-#     return p
+# times = pd.concat([
+#     s2df(ts_const, Complexity='Constant'),
+#     s2df(ts_lin, Complexity='Linear'),
+#     s2df(ts_lin_nb, Complexity='Linear numba'),
+# ])
 # 
-# g = sns.FacetGrid(times, col='Complexity', sharex=False)
-# g.map(plot_zoom, 'N', 'Time');
+# 
+# times_scales = pd.concat([
+#     s2df(times.set_index('N'), Scale='Linear'),
+#     s2df(times.set_index('N'), Scale='Log'),
+# ])
+# 
+# times_scales = pd.concat([
+#     s2df(times.set_index('N'), Scale='Linear'),
+#     s2df(times.set_index('N'), Scale='Log'),
+# ])
 
-# ## Benchmark Log lookup
-
-# import scipy as sp
-# from pandas.compat import lmap, lfilter, lrange, lzip
-# import numba_lookup as nl; reload(nl); from numba_lookup import *
-# ;;
-
-# @njit
-# def benchmark_nb(dct, ks):
-#     s = 0
-#     for k in ks:
-#         s += dct.get(k)
-#     return s
+# ## Logarithmic time lookup
+# 
+# The intuition for log-speed lookups can be understood when searching for a word in the dictionary. (The old fashioned kind, that is. Back when you had to turn pages made of paper.) We don't have the page number for each word memorized, so we can't instantly flip to a word's page (which would be a constant time operation, no matter how large the dictionary is).
+# 
+# 
+# But we also don't use dictionaries where the words are randomly shuffled, requiring us to scan through from the beginning, page by page, word by word until we find our target entry (aka linear lookup complexity).
+# 
+# The words are sorted, so at worst case we can turn to the middle of the dictionary, see that our word comes in the second half, and repeat this search in the second half of the book, eliminating half of the remaining pages at each step. If a 1000 page dictionary is doubled to 2000 pages, the lookup won't take twice as long (linear increase), it'll just be an extra step (log increase). This illustrates a log time lookup, and only requires us to sort our array and use a recursive search strategy. 
+# 
+# ### Benchmark Log lookup
+# 
+# Here I'm importing a wrapper `nmap` from the `numba_lookup.py` file that's like `DWrapper` above. This essential difference is that this function sorts the array after it is converted from the input dict, and uses numpy's (and therefore numba's) `np.searchsorted` functionality to look up the keys in the first two columns.
 
 # In[ ]:
 
@@ -304,7 +267,6 @@ dlog = nmap(d)
 
 # Check equivalence
 assert dct_benchmark(d, a) == dct_benchmark(dlog, a)
-# == benchmark_nb(dlog, a)
 
 
 # In[ ]:
@@ -332,55 +294,25 @@ ts_log_nb = run_benchmark(f=dct_benchmark, genargs=mk_rnd_dct_arr2d_log,
 ts_log_nb
 
 
-# warmup = partial(mk_rnd_dct_arr2d_log, warmup=benchmark_nb)
-# ts_log_nb_loop = run_benchmark(f=benchmark_nb, genargs=mk_rnd_dct_arr2d_log,
-#                           inputs=10 ** np.arange(1, 6), n_repeat=10)
-# ts_log_nb_loop
+# In the benchmark we would expect that for each time the size's order of magnitude increases, the time it takes to retrieve an element will increase by a constant amount. This is (again, *very roughly*) what we see in the log scale plot:
 
 # In[ ]:
 
-times = pd.concat([
+times_scales2 = tab_time_scales([
     s2df(ts_const, Complexity='Constant'),
     s2df(ts_lin, Complexity='Linear'),
     s2df(ts_lin_nb, Complexity='Linear numba'),
     s2df(ts_log_nb, Complexity='Log'),
-#     s2df(ts_log_nb_loop, Complexity='Log_loop'),
 ])
 
-
-times_scales = pd.concat([
-    s2df(times.set_index('N'), Scale='Linear'),
-    s2df(times.set_index('N'), Scale='Log'),
-])
-
-
-# In[ ]:
-
-def plot(x, y, scales, **kw):
-    scale, *_ = scales
-    p = plt.plot(x, y, '.:')
-    if scale == 'Log':
-        plt.xscale('log')
-    else:
-        plt.xticks(rotation=75)
-    return p
-
-ts_ = times_scales.query("Complexity == ['Constant', 'Log', 'Log_loop']")
+ts_ = times_scales2.query("Complexity == ['Constant', 'Log', 'Log_loop']")
 g = sns.FacetGrid(ts_, col='Complexity', row='Scale', sharex=False)
 g.map(plot, 'N', 'Time', 'Scale');
 
 
 # ## Use case
 
-# In[ ]:
-
-@njit
-def benchmark_nb(dct, ks):
-    s = 0
-    for k in ks:
-        s += dct.get(k)
-    return s
-
+# Since logarithmic time lookups increase at a faster rate than constant time operations, justification is still needed for why I care so much about these numba lookup structures when the built-in dicts have better asymptotic complexity. To answer this, here are some benchmarks that are closer to my use case, in that the lookups are performed within a larger (and nested) loop, with a simple function applied in each loop. While the lookup was the core of the other benchmarks, it makes up a smaller fraction of each loop in this benchmark.
 
 # In[ ]:
 
@@ -427,247 +359,29 @@ def look_sum_loop_mod(dct, ks):
     return s
 
 look_sum_loop_mod_nb = njit(look_sum_loop_mod)
-look_sum_loop_mod_nb(_log_dict, _ks[:2])
+look_sum_loop_mod_nb(_log_dict, _ks[:2]);
 
 
 # In[ ]:
 
-get_ipython().magic('time look_sum_loop_mod_nb(_log_dict, big_ks)')
+get_ipython().magic('time res1 = look_sum_loop_mod_nb(_log_dict, big_ks)')
 
 
 # In[ ]:
 
-get_ipython().magic('time look_sum_mod(_dict, big_ks)')
+get_ipython().magic('time res2 = look_sum_mod(_dict, big_ks)')
 
 
 # In[ ]:
 
-get_ipython().magic('time look_sum_loop_mod(_dict, big_ks)')
+get_ipython().magic('time res3 = look_sum_loop_mod(_dict, big_ks)')
 
 
 # In[ ]:
 
-del outer_loop
+assert res1 == res2 == res3
 
 
-# In[ ]:
-
-look_sum_mod(_log_dict, _ks[:2])
-
-
-# In[ ]:
-
-def look_sum(dct, ks):
-#     s = 
-    return sum([dct.get(k) for k in ks])
-
-@njit
-def look_sum_nb(dct, ks):
-    s = 0
-    for k in ks:
-        s += dct.get(k)
-    return s
-
-look_sum_nb(_log_dict, _ks[:2])
-
-
-# In[ ]:
-
-get_ipython().magic('time look_sum(_dict, _ks)')
-
-
-# In[ ]:
-
-get_ipython().magic('time look_sum_nb(_log_dict, _ks)')
-
-
-# In[ ]:
-
-ks4_ix
-
-
-# In[ ]:
-
-len(_ks)
-
-
-# In[ ]:
-
-k
-
-
-# In[ ]:
-
-s_ = 0
-
-
-# In[ ]:
-
-d
-
-
-# In[ ]:
-
-_d
-
-
-# wa = warmup_gen()
+# Because of the low cost of each iteration in a numba loop, nested loops like this are where numba really shines. Additional factors such as the overhead of entering and exiting a loop and doing basic operations in native python is so high that as the number of iterations increases, the performance of a single lookup, even with better runtime complexity, matters less and less.
 # 
-# dct_benchmark(*wa)
-# 
-# dct_benchmark(*warmup_gen())
-# 
-# 
-# %time benchmark_nb(_d, _ks)
-# 
-# %timeit benchmark_nb(_d, _ks)
-
-# ## Sorted array
-
-# N, M = 12000, 1000
-# m = sp.sparse.random(N, M, density=.05, format='csc', random_state=1)
-
-# In[ ]:
-
-N, M = 12000, 1000
-m = mk_m(n=N, m=M, random_state=1)
-drand = coo_todict(m)
-ks, vs = nl.tup_dct2arr(drand)
-
-
-# In[ ]:
-
-ix_table = get_index(ks)
-
-
-# k1, k2 = 0, 228
-# sorted_arr_lookup_ix(ks, vs, ix_table, k1, k2)
-
-# In[ ]:
-
-nm = nmap(drand)
-
-
-# In[ ]:
-
-try:
-    sum_odds_r(nm, rand_keys)
-except Exception as e:
-    print(e)
-    
-
-
-# In[ ]:
-
-sum([nm.get(k1, k2) for k1, k2 in keys(ks) if k2 % 2 == 1])
-
-
-# In[ ]:
-
-lmap(type, list(drand.keys())[0])
-
-
-# In[ ]:
-
-type(drand[(3149, 598)])
-
-
-# In[ ]:
-
-list(it.islice(keys(ks), 5))
-list(it.islice(values(vs), 5))
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-@njit
-def sum_odds(nm):
-    s = 0
-    for k1, k2 in nm.keys():
-        if k2 % 2 == 1:
-            s += nm.get(k1, k2)
-    return s
-
-
-@njit
-def sum_odds2(nm):
-    s = 0
-    for k1, k2 in nm.keys():
-        if k2 % 2 == 1:
-            s += nm.get2(k1, k2)
-    return s
-
-
-# In[ ]:
-
-get_ipython().magic('time sum([v for (k1, k2), v in drand.items() if k2 % 2 == 1])')
-
-
-# In[ ]:
-
-nr.seed(0)
-rand_keys_ = nr.randint(len(nm.ks), size=1000)
-rand_keys = nm.ks[rand_keys_]
-
-
-# In[ ]:
-
-@njit
-def sum_r(nm, rks):
-    s = 0
-    for i in range(len(rks)):
-        k1, k2 = rks[i]
-        s += nm.get(k1, k2)
-    return s
-
-@njit
-def sum_r2(nm, rks):
-    s = 0
-    for i in range(len(rks)):
-        k1, k2 = rks[i]
-        s += nm.get2(k1, k2)
-    return s
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-del sum_odds_r, sum_odds_r2
-
-
-# In[ ]:
-
-sum([drand[(k1, k2)] for (k1, k2) in rand_keys])
-
-
-# In[ ]:
-
-get_ipython().magic('time sum([drand[(k1, k2)] for (k1, k2) in rand_keys])')
-
-
-# In[ ]:
-
-sum_r2(nm, rand_keys)
-
-
-# In[ ]:
-
-get_ipython().magic('time sum_r(nm, rand_keys)')
-get_ipython().magic('time sum_r2(nm, rand_keys)')
-
-
-# In[ ]:
-
-get_ipython().magic('timeit sum_r(nm, rand_keys)')
-get_ipython().magic('timeit sum_r2(nm, rand_keys)')
-# %time sum_odds(nm, rand_keys)
-
+# Thus, with just some basic knowledge of algorithmic complexity, we get speedy lookups using already-implemented numba functions at a pretty low cost.
