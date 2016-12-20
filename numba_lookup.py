@@ -165,10 +165,14 @@ def nmap(dct=None, ks=None, vs=None):
             self.vs = vs
             self.ix_table = ix_table
 
-        def get(self, k1, k2):
+        # def get(self, k1, k2=None):
+        def get(self, ks):
+            k1, k2 = ks
             return sorted_arr_lookup_ix(self.ks, self.vs, self.ix_table, k1, k2)
 
-        def get2(self, k1, k2):
+        # def get2(self, k1, k2):
+        def get2(self, ks):
+            k1, k2 = ks
             return sorted_arr_lookup(self.ks, self.vs, k1, k2)
 
         def keys(self):
