@@ -4,14 +4,9 @@ Logarithmic time lookup with double keys using numba
 from numba import njit, jitclass, int64, float64
 from numba.numpy_support import from_dtype
 import numpy as np
-# from functools import partial
-# from pandas import DataFrame
 
 
 nx = lambda x: next(iter(x))
-# def tup_dct2arr(dct):
-#     return np.array([[k1, k2, v] for (k1, k2),
-# v in sorted(dct.items())])
 
 
 def tup_dct2arr(dct, kv=True):
@@ -137,7 +132,7 @@ class NMap(object):
     ('ix_table', int64[:, :]),
 ])
 class NMap2(object):
-
+    "Testing a different strategy..."
     def __init__(self, ks, vs):  # ix_table
         self.ks = ks
         self.vs = vs
@@ -147,6 +142,7 @@ class NMap2(object):
 
 
 def nmap(dct=None, ks=None, vs=None):
+    "Constructor for lookup wrapper."
     if ks is None or vs is None:
         ks, vs = tup_dct2arr(dct)
     ix = get_index(ks)
@@ -204,37 +200,3 @@ def mk_nmap2(dct=None, ks=None, vs=None):
 
 def nmap2dict(nm):
     return dict(nm.items())
-
-
-# def test_sorted_arr_lookup_ix(dct):
-#     lua = tup_dct2arr(dct)
-#     ix_test = get_index(lua)
-#     lookup_eq_tester(partial(sorted_arr_lookup_ix, lua, ix_test), dct)
-    # for (k1, k2), v in dct.items():
-    #     assert sorted_arr_lookup_ix(lua, ix_test, k1, k2) == v
-
-    # for (k1, k2), v in dct.items():
-    #     assert sorted_arr_lookup(lua, k1, k2) == v
-
-
-# # @njit
-# def sorted_arr_lookup(arr, k1, k2):
-#     """A is a n x 3 array with the first 2 columns sorted.
-#     The values are in the 3rd column.
-#     The lookup uses a binary sort on the first 2 columns to
-#     get the value in the third.
-#     """
-#     c1 = arr[:, 0]
-#     ixa1 = np.searchsorted(c1, k1)
-#     ixa2 = np.searchsorted(c1, k1 + 1)
-
-#     c2 = arr[ixa1:ixa2, 1]
-#     ixb1 = np.searchsorted(c2, k2)
-
-#     ix = ixa1 + ixb1
-#     k1_, k2_, v = arr[ix]
-
-#     if (k1_ != k1) or (k2_ != k2):
-#         print(k1, k2, k1_, k2_)
-#         raise KeyError("Array doesn't contain keys")
-#     return v
